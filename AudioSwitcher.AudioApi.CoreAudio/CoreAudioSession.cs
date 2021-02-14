@@ -93,23 +93,23 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                 return;
 
             _timerSubscription?.Dispose();
-            _meterInformation.Dispose();
-            _simpleAudioVolume.Dispose();
-            _deviceMutedSubscription.Dispose();
-            _muteChanged.Dispose();
-            _stateChanged.Dispose();
-            _disconnected.Dispose();
-            _volumeChanged.Dispose();
-            _peakValueChanged.Dispose();
+            _meterInformation?.Dispose();
+            _simpleAudioVolume?.Dispose();
+            _deviceMutedSubscription?.Dispose();
+            _muteChanged?.Dispose();
+            _stateChanged?.Dispose();
+            _disconnected?.Dispose();
+            _volumeChanged?.Dispose();
+            _peakValueChanged?.Dispose();
 
 
             //Run this on the com thread to ensure it's disposed correctly
             ComThread.BeginInvoke(() =>
             {
-                AudioSessionControl.UnregisterAudioSessionNotification(this);
+                AudioSessionControl?.UnregisterAudioSessionNotification(this);
             }).ContinueWith(x =>
             {
-                _audioSessionControl.Dispose();
+                _audioSessionControl?.Dispose();
             });
 
             GC.SuppressFinalize(this);
