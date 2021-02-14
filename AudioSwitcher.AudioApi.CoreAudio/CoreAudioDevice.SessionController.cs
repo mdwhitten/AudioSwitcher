@@ -10,6 +10,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
         private Lazy<CoreAudioSessionController> _sessionController;
 
+        public CoreAudioSessionController SessionController  => _sessionController.Value;
+
         private void ClearAudioSession()
         {
             if (_sessionController?.IsValueCreated == true)

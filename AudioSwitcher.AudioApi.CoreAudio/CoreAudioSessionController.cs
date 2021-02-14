@@ -13,7 +13,7 @@ using AudioSwitcher.AudioApi.Session;
 
 namespace AudioSwitcher.AudioApi.CoreAudio
 {
-    internal sealed class CoreAudioSessionController : IAudioSessionController, IAudioSessionNotification, IDisposable
+    public sealed class CoreAudioSessionController : IAudioSessionController, IAudioSessionNotification, IDisposable
     {
         private readonly IAudioSessionManager2 _audioSessionManager;
 
@@ -26,7 +26,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
         private List<CoreAudioSession> _sessionCache;
 
-        public CoreAudioSessionController(CoreAudioDevice device, IAudioSessionManager2 audioSessionManager)
+        internal CoreAudioSessionController(CoreAudioDevice device, IAudioSessionManager2 audioSessionManager)
         {
             if (audioSessionManager == null)
                 throw new ArgumentNullException(nameof(audioSessionManager));

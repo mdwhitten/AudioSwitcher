@@ -10,7 +10,7 @@ using AudioSwitcher.AudioApi.Session;
 
 namespace AudioSwitcher.AudioApi.CoreAudio
 {
-    internal sealed class CoreAudioSession : IAudioSession, IAudioSessionEvents
+    public sealed class CoreAudioSession : IAudioSession, IAudioSessionEvents
     {
         private readonly IDisposable _deviceMutedSubscription;
         private readonly ThreadLocal<IAudioMeterInformation> _meterInformation;
@@ -39,7 +39,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private double _volume;
         private bool _isUpdatingPeakValue;
 
-        public CoreAudioSession(CoreAudioDevice device, IAudioSessionControl control)
+        internal CoreAudioSession(CoreAudioDevice device, IAudioSessionControl control)
         {
             ComThread.Assert();
 
