@@ -115,14 +115,13 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             }
         }
 
-        private CoreAudioDevice GetDevice(string realId)
+        private bool TryGetDevice(string realId, out CoreAudioDevice device)
         {
             var acquiredLock = _lock.AcquireReadLockNonReEntrant();
 
             try
             {
-                return
-                    _deviceCache[realId];
+                return _deviceCache.TryGetValue(realId, out device);
             }
             finally
             {
@@ -134,8 +133,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private CoreAudioDevice GetOrAddDeviceFromRealId(string deviceId)
         {
             //This pre-check here may prevent more com objects from being created
-            var device = GetDevice(deviceId);
-            if (device != null)
+            var exists = TryGetDevice(deviceId, out var device);
+            if (exists)
                 return device;
 
             return ComThread.Invoke(() =>
@@ -176,10 +175,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             string id;
             mDevice.GetId(out id);
-            var device = GetDevice(id);
+            bool exists = TryGetDevice(id, out var device);
 
-            if (device != null)
-                return device;
+            if (exists) return device;
 
             device = new CoreAudioDevice(mDevice, this);
 
