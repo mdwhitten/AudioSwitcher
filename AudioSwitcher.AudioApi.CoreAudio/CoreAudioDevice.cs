@@ -11,7 +11,7 @@ using AudioSwitcher.AudioApi.Session;
 
 namespace AudioSwitcher.AudioApi.CoreAudio
 {
-    public sealed partial class CoreAudioDevice : Device
+    public sealed partial class CoreAudioDevice : Device, IEquatable<string>, IEquatable<CoreAudioDevice>
     {
         private const int DefaultComTimeout = 500;
 
@@ -182,7 +182,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             ReloadAudioSessionController();
 
             controller.SystemEvents.DeviceStateChanged
-                                    .When(x => String.Equals(x.DeviceId, RealId, StringComparison.OrdinalIgnoreCase))
+                                    .When(x => Equals(x.DeviceId))
                                     .Subscribe(x => OnStateChanged(x.State));
 
             controller.SystemEvents.DefaultDeviceChanged
@@ -192,7 +192,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                                         if (x.DeviceRole == ERole.Multimedia)
                                             return false;
 
-                                        if (String.Equals(x.DeviceId, RealId, StringComparison.OrdinalIgnoreCase))
+                                        if (Equals(x.DeviceId))
                                             return true;
 
                                         //Ignore events for other device types
@@ -204,7 +204,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                                     .Subscribe(x => OnDefaultChanged(x.DeviceId, x.DeviceRole));
 
             controller.SystemEvents.PropertyChanged
-                                    .When(x => String.Equals(x.DeviceId, RealId, StringComparison.OrdinalIgnoreCase))
+                                    .When(x => Equals(x.DeviceId))
                                     .Subscribe(x => OnPropertyChanged(x.PropertyKey));
         }
 
@@ -447,12 +447,12 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         {
             if (deviceRole == ERole.Communications)
             {
-                _isDefaultCommDevice = String.Equals(deviceId, RealId, StringComparison.OrdinalIgnoreCase);
+                _isDefaultCommDevice = Equals(deviceId);
                 _defaultCommResetEvent.Set();
             }
             else
             {
-                _isDefaultDevice = String.Equals(deviceId, RealId, StringComparison.OrdinalIgnoreCase);
+                _isDefaultDevice = Equals(deviceId);
                 _defaultResetEvent.Set();
             }
 
@@ -591,6 +591,29 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         {
             if (_isDisposed)
                 throw new ObjectDisposedException("CoreAudioDevice");
+        }
+        public override bool Equals(object obj)
+        {
+            if (obj == null) return false;
+
+            if (obj is CoreAudioDevice dev)
+            {
+                return Equals(dev);
+            }
+            else return false;
+        }
+
+        public bool Equals(CoreAudioDevice other)
+        {
+            return Equals(other.RealId);
+        }
+        public bool Equals(string other)
+        {
+            return RealId.Equals(other, StringComparison.InvariantCultureIgnoreCase);
+        }
+        public override int GetHashCode()
+        {
+            return RealId.GetHashCode();
         }
     }
 }
