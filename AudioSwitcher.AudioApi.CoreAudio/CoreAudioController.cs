@@ -16,7 +16,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
     public sealed class CoreAudioController : AudioController<CoreAudioDevice>
     {
         private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
-        private HashSet<CoreAudioDevice> _deviceCache = new HashSet<CoreAudioDevice>();
+        private Dictionary<string, CoreAudioDevice> _deviceCache = new Dictionary<string, CoreAudioDevice>();
         private volatile IntPtr _innerEnumeratorPtr;
         private readonly ThreadLocal<IMultimediaDeviceEnumerator> _innerEnumerator;
         private SystemEventNotifcationClient _systemEvents;
@@ -41,7 +41,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                 _systemEvents.DeviceAdded.Subscribe(x => OnDeviceAdded(x.DeviceId));
                 _systemEvents.DeviceRemoved.Subscribe(x => OnDeviceRemoved(x.DeviceId));
 
-                _deviceCache = new HashSet<CoreAudioDevice>();
+                _deviceCache = new Dictionary<string, CoreAudioDevice>();
+
                 IMultimediaDeviceCollection collection;
                 InnerEnumerator.EnumAudioEndpoints(EDataFlow.All, deviceState, out collection);
 
@@ -65,10 +66,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
         private void OnDeviceRemoved(string deviceId)
         {
-            var devicesRemoved = RemoveFromRealId(deviceId);
+            var dev = RemoveFromRealId(deviceId);
+            OnAudioDeviceChanged(new DeviceRemovedArgs(dev));
 
-            foreach (var dev in devicesRemoved)
-                OnAudioDeviceChanged(new DeviceRemovedArgs(dev));
         }
 
         ~CoreAudioController()
@@ -85,9 +85,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             })
             .ContinueWith(x =>
             {
-                foreach (var device in _deviceCache)
+                foreach (var device in _deviceCache.Values)
                 {
-                    device.Dispose();
+                    device?.Dispose();
                 }
 
                 _deviceCache?.Clear();
@@ -106,7 +106,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _deviceCache.FirstOrDefault(x => x.Id == id && state.HasFlag(x.State));
+                return _deviceCache.Values.FirstOrDefault(x => x.Id == id && state.HasFlag(x.State));
             }
             finally
             {
@@ -122,8 +122,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             try
             {
                 return
-                    _deviceCache.FirstOrDefault(
-                        x => string.Equals(x.RealId, realId, StringComparison.InvariantCultureIgnoreCase));
+                    _deviceCache[realId];
             }
             finally
             {
@@ -151,19 +150,17 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             });
         }
 
-        private IEnumerable<CoreAudioDevice> RemoveFromRealId(string deviceId)
+        private CoreAudioDevice RemoveFromRealId(string deviceId)
         {
             var lockAcquired = _lock.AcquireWriteLockNonReEntrant();
             try
             {
-                var devicesToRemove =
-                    _deviceCache.Where(
-                        x => string.Equals(x.RealId, deviceId, StringComparison.InvariantCultureIgnoreCase)).ToList();
 
-                _deviceCache.RemoveWhere(
-                    x => string.Equals(x.RealId, deviceId, StringComparison.InvariantCultureIgnoreCase));
+                var deviceToRemove = _deviceCache[deviceId];
 
-                return devicesToRemove;
+                _deviceCache.Remove(deviceId);
+
+                return deviceToRemove;
             }
             finally
             {
@@ -194,7 +191,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                _deviceCache.Add(device);
+                _deviceCache.Add(device.RealId, device);
                 return device;
             }
             finally
@@ -242,7 +239,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _deviceCache.FirstOrDefault(x => x.RealId == devId);
+                return _deviceCache[devId];
             }
             finally
             {
@@ -257,7 +254,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _deviceCache.Where(x =>
+                return _deviceCache.Values.Where(x =>
                     (x.DeviceType == deviceType || deviceType == DeviceType.All)
                     && state.HasFlag(x.State)).ToList();
             }
