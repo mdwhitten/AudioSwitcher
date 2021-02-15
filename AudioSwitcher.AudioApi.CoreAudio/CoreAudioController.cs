@@ -21,6 +21,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private readonly ThreadLocal<IMultimediaDeviceEnumerator> _innerEnumerator;
         private SystemEventNotifcationClient _systemEvents;
 
+        private Dictionary<(DeviceType, Role), CoreAudioDevice> _defaultDevicesCache;
+
         private IMultimediaDeviceEnumerator InnerEnumerator => _innerEnumerator.Value;
 
         public CoreAudioController(EDeviceState deviceState = EDeviceState.Active)
@@ -51,6 +53,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                     foreach (var mDev in coll)
                         CacheDevice(mDev);
                 }
+
+                _defaultDevicesCache = new Dictionary<(DeviceType, Role), CoreAudioDevice>();
+                CacheDefaultDevices();
             });
         }
 
@@ -199,6 +204,23 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             }
         }
 
+        private void CacheDefaultDevices()
+        {
+            List<(DeviceType type, Role role)> defaults = new List<(DeviceType type, Role role)>()
+            {
+                (DeviceType.Playback, Role.Console | Role.Multimedia),
+                (DeviceType.Playback, Role.Communications),
+                (DeviceType.Capture, Role.Console | Role.Multimedia),
+                (DeviceType.Capture, Role.Communications)
+            };
+            
+            foreach (var defaultDeviceSettings in defaults)
+            {
+                var device = GetOrAddDeviceFromRealId(GetDefaultDeviceId(defaultDeviceSettings.type, defaultDeviceSettings.role));
+                _defaultDevicesCache.Add(defaultDeviceSettings, device);
+            }
+        }
+        
         private static bool DeviceIsValid(IMultimediaDevice device)
         {
             try
@@ -231,13 +253,18 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
         public override CoreAudioDevice GetDefaultDevice(DeviceType deviceType, Role role)
         {
-            string devId = GetDefaultDeviceId(deviceType, role);
-
             var acquiredLock = _lock.AcquireReadLockNonReEntrant();
 
             try
             {
-                return _deviceCache[devId];
+                bool found = _defaultDevicesCache.TryGetValue((deviceType, role), out var device);
+                if (!found)
+                {
+                    string devId = GetDefaultDeviceId(deviceType, role);
+                    device = GetOrAddDeviceFromRealId(devId);
+                    _defaultDevicesCache[(deviceType, role)] = device;
+                }
+                return device;
             }
             finally
             {
