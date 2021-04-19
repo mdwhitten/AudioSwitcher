@@ -47,6 +47,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private volatile bool _isDefaultDevice;
         private volatile bool _isDefaultCommDevice;
 
+        public event EventHandler<DefaultDeviceChangedArgs> DefaultDeviceChanged;
+
         private IMultimediaDevice Device
         {
             get
@@ -185,23 +187,21 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                                     .When(x => Equals(x.DeviceId))
                                     .Subscribe(x => OnStateChanged(x.State));
 
-            controller.SystemEvents.DefaultDeviceChanged
+            controller.DefaultDeviceChanged
                                     .When(x =>
                                     {
-                                        //Ignore duplicate mm event
-                                        if (x.DeviceRole == ERole.Multimedia)
-                                            return false;
-
-                                        if (Equals(x.DeviceId))
+                                        if (Equals(x.Device))
                                             return true;
 
+                                        /*
                                         //Ignore events for other device types
-                                        if (x.DataFlow != _dataFlow)
-                                            return false;
+                                        if (x.Device. != Type)
+                                            return false;*/
 
-                                        return (x.DeviceRole == ERole.Communications && _isDefaultCommDevice) || (x.DeviceRole != ERole.Communications && _isDefaultDevice);
+                                        // If this device was previously the default we need to update it
+                                        return (x.IsDefaultCommunications && _isDefaultCommDevice) || (x.IsDefault && _isDefaultDevice);
                                     })
-                                    .Subscribe(x => OnDefaultChanged(x.DeviceId, x.DeviceRole));
+                                    .Subscribe(OnDefaultChanged);
 
             controller.SystemEvents.PropertyChanged
                                     .When(x => Equals(x.DeviceId))
@@ -443,20 +443,20 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                     _setDefaultCommSemaphore.Release();
             }
         }
-        private void OnDefaultChanged(string deviceId, ERole deviceRole)
+        private void OnDefaultChanged(DefaultDeviceChangedArgs args)
         {
-            if (deviceRole == ERole.Communications)
+            if (args.IsDefaultCommunications)
             {
-                _isDefaultCommDevice = Equals(deviceId);
+                _isDefaultCommDevice = Equals(args.Device);
                 _defaultCommResetEvent.Set();
             }
             else
             {
-                _isDefaultDevice = Equals(deviceId);
+                _isDefaultDevice = Equals(args.Device);
                 _defaultResetEvent.Set();
             }
 
-            OnDefaultChanged();
+            //OnDefaultChanged();
         }
 
         private void LoadProperties()
@@ -470,8 +470,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             ep?.GetDataFlow(out _dataFlow);
 
             //load the initial default state. Have to query using device id because this device is not cached until after creation
-            _isDefaultCommDevice = _controller.GetDefaultDeviceId(DeviceType, Role.Communications) == RealId;
-            _isDefaultDevice = _controller.GetDefaultDeviceId(DeviceType, Role.Multimedia | Role.Console) == RealId;
+            _isDefaultCommDevice = Equals( _controller.GetDefaultDeviceId(DeviceType, Role.Communications));
+            _isDefaultDevice = Equals(_controller.GetDefaultDeviceId(DeviceType, Role.Multimedia | Role.Console));
 
             GetPropertyInformation(Device);
         }
@@ -614,6 +614,10 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         public override int GetHashCode()
         {
             return RealId.GetHashCode();
+        }
+        public override string ToString()
+        {
+            return $"{FullName} - {DeviceType}: {Id}";
         }
     }
 }

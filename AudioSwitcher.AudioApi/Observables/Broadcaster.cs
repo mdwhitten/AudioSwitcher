@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace AudioSwitcher.AudioApi.Observables
 {
@@ -39,7 +40,7 @@ namespace AudioSwitcher.AudioApi.Observables
                 coll = _observers.ToList();
             }
 
-            foreach (var observer in coll)
+            Parallel.ForEach(_observers, observer =>
             {
                 try
                 {
@@ -56,7 +57,7 @@ namespace AudioSwitcher.AudioApi.Observables
                         //ignored, should not impact other observers
                     }
                 }
-            }
+            });
         }
 
         public override void OnError(Exception error)
@@ -70,7 +71,7 @@ namespace AudioSwitcher.AudioApi.Observables
                 coll = _observers.ToList();
             }
 
-            foreach (var observer in coll)
+            Parallel.ForEach(_observers, observer =>
             {
                 try
                 {
@@ -80,7 +81,7 @@ namespace AudioSwitcher.AudioApi.Observables
                 {
                     //ignored, should not impact other observers
                 }
-            }
+            });
         }
 
         public override void OnCompleted()
@@ -94,17 +95,19 @@ namespace AudioSwitcher.AudioApi.Observables
                 coll = _observers.ToList();
             }
 
-            foreach (var observer in coll)
+            Parallel.ForEach(_observers, observer =>
             {
                 try
                 {
                     observer.OnCompleted();
                 }
+
                 catch
                 {
                     //ignored, should not impact other observers
                 }
-            }
+
+            });
 
             _isComplete = true;
         }

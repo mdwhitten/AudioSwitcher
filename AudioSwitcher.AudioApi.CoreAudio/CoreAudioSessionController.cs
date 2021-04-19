@@ -10,10 +10,11 @@ using AudioSwitcher.AudioApi.CoreAudio.Interfaces;
 using AudioSwitcher.AudioApi.CoreAudio.Threading;
 using AudioSwitcher.AudioApi.Observables;
 using AudioSwitcher.AudioApi.Session;
+using System.Collections.ObjectModel;
 
 namespace AudioSwitcher.AudioApi.CoreAudio
 {
-    public sealed class CoreAudioSessionController : IAudioSessionController, IAudioSessionNotification, IDisposable
+    public sealed class CoreAudioSessionController : IAudioSessionController, IAudioSessionNotification, IDisposable, IEnumerable<IAudioSession>
     {
         private readonly IAudioSessionManager2 _audioSessionManager;
 
@@ -24,7 +25,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private readonly Broadcaster<IAudioSession> _sessionCreated;
         private readonly Broadcaster<string> _sessionDisconnected;
 
-        private List<CoreAudioSession> _sessionCache;
+        private Dictionary<string, CoreAudioSession> _sessionCache;
 
         internal CoreAudioSessionController(CoreAudioDevice device, IAudioSessionManager2 audioSessionManager)
         {
@@ -36,7 +37,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             _device = device;
             _audioSessionManager = audioSessionManager;
             _audioSessionManager.RegisterSessionNotification(this);
-            _sessionCache = new List<CoreAudioSession>(0);
+            //_sessionCache = new List<CoreAudioSession>();
 
             _sessionCreated = new Broadcaster<IAudioSession>();
             _sessionDisconnected = new Broadcaster<string>();
@@ -45,7 +46,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             _processTerminatedSubscription = ProcessMonitor.ProcessTerminated.Subscribe(processId =>
             {
-                RemoveSessions(_sessionCache.Where(x => x.ProcessId == processId));
+                RemoveSessions(_sessionCache.Values.Where(x => x.ProcessId == processId));
             });
 
         }
@@ -60,7 +61,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _sessionCache.ToList();
+                return _sessionCache.Values;
             }
             finally
             {
@@ -80,7 +81,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _sessionCache.Where(x => x.SessionState == AudioSessionState.Active).ToList();
+                return _sessionCache.Values.Where(x => x.SessionState == AudioSessionState.Active).ToList();
             }
             finally
             {
@@ -100,7 +101,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _sessionCache.Where(x => x.SessionState == AudioSessionState.Inactive).ToList();
+                return _sessionCache.Values.Where(x => x.SessionState == AudioSessionState.Inactive).ToList();
             }
             finally
             {
@@ -120,7 +121,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                return _sessionCache.Where(x => x.SessionState == AudioSessionState.Expired).ToList();
+                return _sessionCache.Values.Where(x => x.SessionState == AudioSessionState.Expired).ToList();
             }
             finally
             {
@@ -181,7 +182,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             int count;
             enumerator.GetCount(out count);
 
-            _sessionCache = new List<CoreAudioSession>(count);
+            _sessionCache = new Dictionary<string, CoreAudioSession>(count);
 
             for (var i = 0; i < count; i++)
             {
@@ -204,11 +205,11 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             var acquiredLock = _lock.AcquireReadLockNonReEntrant();
             try
             {
-                var existing = _sessionCache.FirstOrDefault(x => x.ProcessId == managedSession.ProcessId && String.Equals(x.Id, managedSession.Id));
-                if (existing != null)
+                bool existing = _sessionCache.TryGetValue(managedSession.InstanceId, out var existingSession);
+                if (existing)
                 {
                     managedSession.Dispose();
-                    return existing;
+                    return existingSession;
                 }
             }
             finally
@@ -224,7 +225,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                _sessionCache.Add(managedSession);
+                _sessionCache.Add(managedSession.InstanceId, managedSession);
             }
             finally
             {
@@ -241,9 +242,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
         private void ManagedSessionOnDisconnected(SessionDisconnectedArgs disconnectedArgs)
         {
-            var sessions = _sessionCache.Where(x => x.Id == disconnectedArgs.Session.Id);
+            bool found = _sessionCache.TryGetValue(disconnectedArgs.Session.Id, out var session);
 
-            RemoveSessions(sessions);
+            if (found) RemoveSessions(new CoreAudioSession[] { session });
         }
 
         private void RemoveSessions(IEnumerable<CoreAudioSession> sessions)
@@ -257,7 +258,10 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             try
             {
-                _sessionCache.RemoveAll(x => coreAudioSessions.Any(y => y.Id == x.Id));
+                foreach (CoreAudioSession session in sessions)
+                {
+                    _sessionCache.Remove(session.InstanceId);
+                }
             }
             finally
             {

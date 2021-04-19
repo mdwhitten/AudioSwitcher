@@ -8,6 +8,8 @@ namespace AudioSwitcher.AudioApi.Session
     {
         string Id { get; }
 
+        string InstanceId { get; }
+
         int ProcessId { get; }
 
         string DisplayName { get; }

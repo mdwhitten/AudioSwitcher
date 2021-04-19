@@ -19,7 +19,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private Dictionary<string, CoreAudioDevice> _deviceCache = new Dictionary<string, CoreAudioDevice>();
         private volatile IntPtr _innerEnumeratorPtr;
         private readonly ThreadLocal<IMultimediaDeviceEnumerator> _innerEnumerator;
-        private SystemEventNotifcationClient _systemEvents;
+        public Broadcaster<DefaultDeviceChangedArgs> DefaultDeviceChanged;
+        internal SystemEventNotifcationClient SystemEvents { get; private set; }
 
         private Dictionary<(DeviceType, Role), CoreAudioDevice> _defaultDevicesCache;
 
@@ -30,6 +31,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             // ReSharper disable once SuspiciousTypeConversion.Global
             var innerEnumerator = ComObjectFactory.GetDeviceEnumerator();
             _innerEnumeratorPtr = Marshal.GetIUnknownForObject(innerEnumerator);
+            DefaultDeviceChanged = new Broadcaster<DefaultDeviceChangedArgs>();
 
             if (innerEnumerator == null)
                 throw new InvalidComObjectException("No Device Enumerator");
@@ -38,10 +40,11 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             ComThread.Invoke(() =>
             {
-                _systemEvents = new SystemEventNotifcationClient(() => InnerEnumerator);
+                SystemEvents = new SystemEventNotifcationClient(() => InnerEnumerator);
 
-                _systemEvents.DeviceAdded.Subscribe(x => OnDeviceAdded(x.DeviceId));
-                _systemEvents.DeviceRemoved.Subscribe(x => OnDeviceRemoved(x.DeviceId));
+                SystemEvents.DeviceAdded.Subscribe(x => OnDeviceAdded(x.DeviceId));
+                SystemEvents.DeviceRemoved.Subscribe(x => OnDeviceRemoved(x.DeviceId));
+                SystemEvents.DefaultDeviceChanged.Subscribe(x => OnDefaultChanged(x));
 
                 _deviceCache = new Dictionary<string, CoreAudioDevice>();
 
@@ -57,9 +60,10 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                 _defaultDevicesCache = new Dictionary<(DeviceType, Role), CoreAudioDevice>();
                 CacheDefaultDevices();
             });
+
         }
 
-        internal SystemEventNotifcationClient SystemEvents => _systemEvents;
+        
 
         private void OnDeviceAdded(string deviceId)
         {
@@ -73,7 +77,24 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         {
             var dev = RemoveFromRealId(deviceId);
             OnAudioDeviceChanged(new DeviceRemovedArgs(dev));
+        }
+        private void OnDefaultChanged(SystemEventNotifcationClient.DefaultChangedArgs args)
+        {
+            // Notificiation will be sent for MM and Console; ignore MM to avoid duplicate notifications
+            if (args.DeviceRole != ERole.Multimedia)
+            {
+                var dev = GetOrAddDeviceFromRealId(args.DeviceId);
+                CacheDefault((args.DataFlow.AsDeviceType(), args.DeviceRole.AsRole()), dev);
 
+                bool isDefault = args.DeviceRole == ERole.Console;
+                bool isDefaultComs = !isDefault;
+
+                //dev.DefaultDeviceChanged.invo
+                DefaultDeviceChanged.OnNext(new DefaultDeviceChangedArgs(dev, isDefault, isDefaultComs));
+
+
+                //OnAudioDeviceChanged(new DefaultDeviceChangedArgs(dev));
+            }
         }
 
         ~CoreAudioController()
@@ -85,8 +106,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         {
             ComThread.BeginInvoke(() =>
             {
-                _systemEvents?.Dispose();
-                _systemEvents = null;
+                SystemEvents?.Dispose();
+                SystemEvents = null;
             })
             .ContinueWith(x =>
             {
@@ -98,6 +119,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                 _deviceCache?.Clear();
                 _lock?.Dispose();
                 _innerEnumerator?.Dispose();
+                DefaultDeviceChanged?.Dispose();
 
                 base.Dispose(disposing);
 
@@ -186,9 +208,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
 
             device = new CoreAudioDevice(mDevice, this);
 
-            device.StateChanged.Subscribe(OnAudioDeviceChanged);
-            device.DefaultChanged.Subscribe(OnAudioDeviceChanged);
-            device.PropertyChanged.Subscribe(OnAudioDeviceChanged);
+            //device.StateChanged.Subscribe(OnAudioDeviceChanged);
+            //device.DefaultChanged.Subscribe(OnAudioDeviceChanged);
+            //device.PropertyChanged.Subscribe(OnAudioDeviceChanged);
 
             var lockAcquired = _lock.AcquireWriteLockNonReEntrant();
 
@@ -217,10 +239,24 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             foreach (var defaultDeviceSettings in defaults)
             {
                 var device = GetOrAddDeviceFromRealId(GetDefaultDeviceId(defaultDeviceSettings.type, defaultDeviceSettings.role));
-                _defaultDevicesCache.Add(defaultDeviceSettings, device);
+                CacheDefault(defaultDeviceSettings, device);
             }
         }
-        
+
+        private void CacheDefault((DeviceType type, Role role) defaultDeviceSettings, CoreAudioDevice device)
+        {
+            var acquiredLock = _lock.AcquireReadLockNonReEntrant();
+            try
+            {
+                _defaultDevicesCache[defaultDeviceSettings] = device;
+            }
+            finally
+            {
+                if (acquiredLock)
+                    _lock.ExitReadLock();
+            }
+        }
+
         private static bool DeviceIsValid(IMultimediaDevice device)
         {
             try
@@ -254,23 +290,25 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         public override CoreAudioDevice GetDefaultDevice(DeviceType deviceType, Role role)
         {
             var acquiredLock = _lock.AcquireReadLockNonReEntrant();
-
+            CoreAudioDevice dev = null;
             try
             {
-                bool found = _defaultDevicesCache.TryGetValue((deviceType, role), out var device);
+                bool found = _defaultDevicesCache.TryGetValue((deviceType, role), out dev);
                 if (!found)
                 {
                     string devId = GetDefaultDeviceId(deviceType, role);
-                    device = GetOrAddDeviceFromRealId(devId);
-                    _defaultDevicesCache[(deviceType, role)] = device;
+                    dev = GetOrAddDeviceFromRealId(devId);
                 }
-                return device;
+                return dev;
             }
             finally
             {
                 if (acquiredLock)
                     _lock.ExitReadLock();
+                // Moved outside because cache also acquires a lock
+                if (dev != null) CacheDefault((deviceType, role), dev);
             }
+            
         }
 
         public override IEnumerable<CoreAudioDevice> GetDevices(DeviceType deviceType, DeviceState state)

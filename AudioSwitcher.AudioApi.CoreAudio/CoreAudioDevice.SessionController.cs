@@ -49,6 +49,8 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                             _sessionController?.Value?.Dispose();
 
                         _sessionController = null;
+
+                        throw;
                     }
 
                     return null;

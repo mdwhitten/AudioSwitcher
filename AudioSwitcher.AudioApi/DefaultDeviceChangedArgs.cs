@@ -12,5 +12,11 @@
             IsDefault = dev.IsDefaultDevice;
             IsDefaultCommunications = dev.IsDefaultCommunicationsDevice;
         }
+        public DefaultDeviceChangedArgs(IDevice dev, bool isDefault, bool isDefaultComs)
+            : base(dev, DeviceChangedType.DefaultChanged)
+        {
+            IsDefault = isDefault;
+            IsDefaultCommunications = isDefaultComs;
+        }
     }
 }

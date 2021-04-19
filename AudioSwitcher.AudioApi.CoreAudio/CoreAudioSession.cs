@@ -10,7 +10,7 @@ using AudioSwitcher.AudioApi.Session;
 
 namespace AudioSwitcher.AudioApi.CoreAudio
 {
-    public sealed class CoreAudioSession : IAudioSession, IAudioSessionEvents
+    public sealed class CoreAudioSession : IAudioSession, IAudioSessionEvents, IEquatable<string>, IEquatable<CoreAudioSession>
     {
         private readonly IDisposable _deviceMutedSubscription;
         private readonly ThreadLocal<IAudioMeterInformation> _meterInformation;
@@ -38,6 +38,9 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         private AudioSessionState _state;
         private double _volume;
         private bool _isUpdatingPeakValue;
+        private string _instanceId;
+        private string _owningProcessWindowTitle;
+        private string _owningProcessName;
 
         internal CoreAudioSession(CoreAudioDevice device, IAudioSessionControl control)
         {
@@ -142,6 +145,7 @@ namespace AudioSwitcher.AudioApi.CoreAudio
         public IObservable<SessionDisconnectedArgs> Disconnected => _disconnected.AsObservable();
 
         public string Id => _id;
+        public string InstanceId => _instanceId;
 
         public int ProcessId => _processId;
 
@@ -369,7 +373,15 @@ namespace AudioSwitcher.AudioApi.CoreAudio
                 AudioSessionControl.GetProcessId(out processId);
                 _processId = (int)processId;
 
+                using (Process p = Process.GetProcessById(_processId))
+                {
+                    _owningProcessWindowTitle = p.MainWindowTitle;
+                    _owningProcessName = p.ProcessName;
+                }
+
+
                 AudioSessionControl.GetSessionIdentifier(out _id);
+                AudioSessionControl.GetSessionInstanceIdentifier(out _instanceId);
 
                 try
                 {
@@ -417,5 +429,59 @@ namespace AudioSwitcher.AudioApi.CoreAudio
             if (_isDisposed)
                 throw new ObjectDisposedException("Session is disposed");
         }
+        public override bool Equals(object obj)
+        {
+            if (obj == null) return false;
+
+            if (obj is CoreAudioSession sess)
+            {
+                return Equals(sess);
+            }
+            return false;
+        }
+
+        public bool Equals(string other)
+        {
+            return InstanceId.Equals(other, StringComparison.InvariantCultureIgnoreCase);
+        }
+
+        public bool Equals(CoreAudioSession other)
+        {
+            return Equals(other.InstanceId);
+        }
+
+        public static bool operator ==(CoreAudioSession a, CoreAudioSession b)
+        {
+            return Equals(a, b);
+        }
+        public static bool operator !=(CoreAudioSession a, CoreAudioSession b)
+        {
+            return !(a == b);
+        }
+        public override int GetHashCode()
+        {
+            return InstanceId.GetHashCode();
+        }
+        public override string ToString()
+        {
+            if (string.IsNullOrEmpty(DisplayName))
+            {
+                string pName = OwningProcessName;
+                if (string.IsNullOrEmpty(pName))
+                {
+                    string winTitle = OwningProcessWindowTitle;
+                    if (string.IsNullOrEmpty(winTitle))
+                    {
+                        return ExecutablePath;
+                    }
+                    else return winTitle;
+                }
+                else return pName;
+            }
+            else return DisplayName;
+        }
+        public string OwningProcessWindowTitle => _owningProcessWindowTitle;
+
+        public string OwningProcessName => _owningProcessName;
     }
 }
